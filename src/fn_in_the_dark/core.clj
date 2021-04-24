@@ -86,7 +86,6 @@
 
 (defn controls
   [_ event]
-  (prn "CONTROL" @game-state)
   (let [[x y] @player]
     (case (:key event)
       :up (move-player [x (dec y)])
@@ -248,8 +247,8 @@
   (q/text-size 30)
   (q/text "FNBLING IN THE DARK" (* (draw-width) 10) (* (draw-height) 3))  
   (q/text-size 15)
-  (q/text "Explore in the dark, find the bling and escape the maze.\n The sight of the monster petrifies you and draws it to you.\n Use the light to help navigate but don't leave it on too long." (* (draw-width) 10) (* (draw-height) 6))
-  (q/text "Arrow keys to move and space turns lights on/off" (* (draw-width) 10) (* (draw-height) 8))
+  (q/text "Explore in the dark, find the bling and escape the maze.\n The sight of the monsters petrifies you and draws them to you.\n Use the light to help navigate but don't leave it on too long." (* (draw-width) 10) (* (draw-height) 6))
+  (q/text "Arrow keys move and space turns lights on/off" (* (draw-width) 10) (* (draw-height) 8))
   (q/text "[Press space to begin]" (* (draw-width) 10) (* (draw-height) 11)))
 
 (defn draw-shutter
