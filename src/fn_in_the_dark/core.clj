@@ -8,11 +8,11 @@
 (def world {:width 20 :height 20})
 (def fps 30)
 (def enemy-frames 10)
-(def number-of-barriers 30)
+(def max-levels 3)
 
 ;; Positions
 (def player (atom []))
-(def enemy (atom []))
+(def enemies (atom []))
 (def bling (atom []))
 (def walls (atom []))
 (def barriers (atom []))
@@ -20,12 +20,14 @@
 (def corner-positions [[0 0] [0 19] [19 0] [19 19]])
 (def messages (atom []))
 
+
 (defn init-game-state
-  []
+  [level]
   (reset! game-state {:bling? false
                       :instructions? true
                       :shutter-closed? true
                       :win? false
+                      :current-level level
                       :lose? false
                       :frame 0}))
 
@@ -49,20 +51,19 @@
                           (map (fn [i] [i 19]) (range (:height world))))
         goal-pos (->> walls-pos (remove #((set corner-positions) %)) rand-nth)
         bling-pos (random-position 1 (- (world :width) 1))
-        enemy-pos (random-position 1 (- (world :width) 1))
-        barriers-pos (->> (repeatedly number-of-barriers #(random-position 1 18))
-                          (remove #((set (conj (surrounding-positions goal-pos) @player bling-pos enemy-pos)) %)))]
+        enemies-pos (repeatedly (:current-level @game-state) #(random-position 1 (- (world :width) 1)))
+        barriers-pos (->> (repeatedly (* (:current-level @game-state) 20) #(random-position 1 18))
+                          (remove #((set (conj (concat enemies-pos (surrounding-positions goal-pos)) @player bling-pos)) %)))]
     (reset! walls walls-pos)
     (reset! goal goal-pos)
-    (reset! enemy enemy-pos)
+    (reset! enemies enemies-pos)
     (reset! player [10 10])
-    ;; TODO avoid collision with player and walls
     (reset! bling bling-pos)
     (reset! barriers barriers-pos)))
 
 (defn setup []
   (q/frame-rate fps)
-  (init-game-state)
+  (init-game-state 1)
   (populate-world)
   (reset! messages [])
   (q/background 0))
@@ -112,37 +113,40 @@
        (remove #(collide-with-wall? %))
        (not-empty)))
 
-(defn move-enemy
-  []
+(defn generate-enemy-pos
+  [[ex ey]]
   ;; Enemy moves towards player when light is on
-  (let [[ex ey] @enemy
-        [px py] @player
+  (let [[px py] @player
         neighbour-pos (remove-wall-pos [[ex (dec ey)][ex (inc ey)][(dec ex) ey][(inc ex) ey]])
         tracking-pos (remove-wall-pos (filter identity
-                                       (conj []
-                                             (when (not (zero? (compare py ey)))
-                                               [ex (+ ey (compare py ey))])
-                                             (when (not (zero? (compare px ex)))
-                                               [(+ ex (compare px ex)) ey]))))]
-    (reset! enemy (-> (if (:shutter-closed? @game-state)
-                        neighbour-pos
-                        (or tracking-pos neighbour-pos))
-                      (rand-nth)))))
+                                              (conj []
+                                                    (when (not (zero? (compare py ey)))
+                                                      [ex (+ ey (compare py ey))])
+                                                    (when (not (zero? (compare px ex)))
+                                                      [(+ ex (compare px ex)) ey]))))]
+    (-> (if (:shutter-closed? @game-state)
+          neighbour-pos
+          (or tracking-pos neighbour-pos))
+        (rand-nth))))
 
 (defn update-state [_]
   (swap! game-state update :frame inc)
   (cond
     ;;enemy move
     (and (false? (:instructions? @game-state))
-         (zero? (rem (:frame @game-state) enemy-frames))) (move-enemy)
+         (zero? (rem (:frame @game-state) enemy-frames))) (reset! enemies (map #(generate-enemy-pos %) @enemies))
     ;; bling taken
     (= @player @bling) (bling-taken)
     
     ;; Win
-    (= @player @goal) (swap! game-state assoc :win? true)
+    (and (= @player @goal) (= (:current-level @game-state) max-levels)) (swap! game-state assoc :win? true)
+
+    ;; Next Level
+    (= @player @goal) (do (init-game-state (inc (:current-level @game-state)))
+                          (populate-world))
 
     ;; Lose
-    (= @player @enemy) (swap! game-state assoc :lose? true)
+    ((set @enemies) @player) (swap! game-state assoc :lose? true)
     
     :default nil))
 
@@ -180,9 +184,9 @@
     (q/ellipse (+ (* (draw-width) 0.25) (* (draw-width) x)) (+ (* (draw-height) 0.25) (* (draw-height) y))
                (/ (draw-width) 2) (/ (draw-height) 2))))
 
-(defn draw-enemy
+(defn draw-enemies
   []
-  (let [[x y] @enemy]
+  (doseq [[x y] @enemies]
     (q/fill 201 71 245)
     (q/stroke 0 0 0)
     (q/rect (* (draw-width) x) (* (draw-height) y) (draw-width) (draw-height))
@@ -239,22 +243,30 @@
   (q/text-align :center)
   (q/text "[Press r to restart]" (* (draw-width) 10) (* (draw-height) 11)))
 
+(defn draw-title-instructions
+  []
+  (q/text-size 30)
+  (q/text "FNBLING IN THE DARK" (* (draw-width) 10) (* (draw-height) 3))  
+  (q/text-size 15)
+  (q/text "Explore in the dark, find the bling and escape the maze.\n The sight of the monster petrifies you and draws it to you.\n Use the light to help navigate but don't leave it on too long." (* (draw-width) 10) (* (draw-height) 6))
+  (q/text "Arrow keys to move and space turns lights on/off" (* (draw-width) 10) (* (draw-height) 8))
+  (q/text "[Press space to begin]" (* (draw-width) 10) (* (draw-height) 11)))
+
 (defn draw-shutter
   []
   (let [bling (first (filter-message-positions :bling))
         ouch (first (filter-message-positions :ouch))
-        {:keys [instructions?]} @game-state]
+        {:keys [instructions? current-level]} @game-state]
     (q/fill 0 0 0)
     (q/rect 10 10 800 800)
 
     (when instructions?
       (q/fill 255 255 255)
       (q/text-align :center)
-      (q/text-size 30)
-      (q/text "FNBLING IN THE DARK" (* (draw-width) 10) (* (draw-height) 3))  
-      (q/text-size 15)
-      (q/text "Avoid the monster, find the bling and escape the maze.\n The sight of the monster petrifies you and draws it to you.\n Use the light to help you navigate but you can only move in the dark." (* (draw-width) 10) (* (draw-height) 6))
-      (q/text "[Press space to turn the light on]" (* (draw-width) 10) (* (draw-height) 11)))
+      (if (= 1 current-level)
+        (draw-title-instructions)
+        (do (q/text-size 15)
+            (q/text (str "Level " current-level) (* (draw-width) 10) (* (draw-height) 10)))))
 
     (when-let [[x y] bling]
       (q/fill 255 255 255)
@@ -275,7 +287,7 @@
     (q/background 192 192 192)
 
     ;; Enemy
-    (draw-enemy)
+    (draw-enemies)
 
     ;; bling
     (when (not-empty @bling)
