@@ -1,5 +1,5 @@
 # fnbling-in-the-dark
-A simple maze game written in Clojure using the Quil library.
+A simple maze game with a light switch mechanic written in Clojure using the Quil library.
 
 # Running
 
